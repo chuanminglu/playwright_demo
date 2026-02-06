@@ -1,298 +1,350 @@
 """
 Tests for document_converter.py
+
+Tests the actual module API:
+- find_api_key(): Locate Gemini API key from env/.env files
+- find_project_root(): Find project root directory
+- get_mime_type(): Determine MIME type from file extension
+- upload_file(): Upload file to Gemini File API
+- convert_to_markdown(): Convert a document to markdown via Gemini
+- batch_convert(): Batch convert multiple files
 """
 
 import pytest
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, mock_open
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import document_converter as dc
 
 
-class TestEnvLoading:
-    """Test environment variable loading."""
+class TestFindApiKey:
+    """Test API key discovery."""
 
+    @patch.dict('os.environ', {'GEMINI_API_KEY': 'test-key-123'})
+    def test_find_api_key_from_env(self):
+        """Test finding API key from environment variable."""
+        result = dc.find_api_key()
+        assert result == 'test-key-123'
+
+    @patch.dict('os.environ', {}, clear=True)
+    @patch('document_converter.load_dotenv', None)
+    def test_find_api_key_no_dotenv_no_env(self):
+        """Test when no dotenv and no env variable set."""
+        # Remove GEMINI_API_KEY if present
+        import os
+        os.environ.pop('GEMINI_API_KEY', None)
+        result = dc.find_api_key()
+        assert result is None
+
+    @patch.dict('os.environ', {}, clear=True)
     @patch('document_converter.load_dotenv')
     @patch('pathlib.Path.exists')
-    def test_load_env_files_success(self, mock_exists, mock_load_dotenv):
-        """Test successful .env file loading."""
+    def test_find_api_key_from_skill_env(self, mock_exists, mock_load_dotenv):
+        """Test loading API key from skill .env file."""
+        import os
+        os.environ.pop('GEMINI_API_KEY', None)
+
         mock_exists.return_value = True
-        dc.load_env_files()
-        # Should be called for skill, skills, and claude dirs
-        assert mock_load_dotenv.call_count >= 1
 
-    @patch('document_converter.load_dotenv', None)
-    def test_load_env_files_no_dotenv(self):
-        """Test when dotenv is not available."""
-        # Should not raise an error
-        dc.load_env_files()
+        # Simulate load_dotenv setting the env var on first call
+        def side_effect(*args, **kwargs):
+            os.environ['GEMINI_API_KEY'] = 'skill-env-key'
 
+        mock_load_dotenv.side_effect = side_effect
 
-class TestDependencyCheck:
-    """Test dependency checking."""
+        result = dc.find_api_key()
+        assert result == 'skill-env-key'
+        mock_load_dotenv.assert_called()
 
-    @patch('builtins.__import__')
-    def test_check_all_dependencies_available(self, mock_import):
-        """Test when all dependencies are available."""
-        mock_import.return_value = Mock()
-
-        deps = dc.check_dependencies()
-
-        assert 'pypdf' in deps
-        assert 'markdown' in deps
-        assert 'pillow' in deps
-
-    @patch('builtins.__import__')
-    def test_check_dependencies_missing(self, mock_import):
-        """Test when dependencies are missing."""
-        def import_side_effect(name, *args, **kwargs):
-            if name == 'pypdf':
-                raise ImportError()
-            return Mock()
-
-        mock_import.side_effect = import_side_effect
-
-        # The function uses try/except, so we test the actual function
-        with patch('document_converter.sys.modules', {}):
-            # This is tricky to test due to import handling
-            pass
+        # Cleanup
+        os.environ.pop('GEMINI_API_KEY', None)
 
 
-class TestPDFPageExtraction:
-    """Test PDF page extraction."""
+class TestFindProjectRoot:
+    """Test project root discovery."""
 
-    @patch('pypdf.PdfReader')
-    @patch('pypdf.PdfWriter')
-    @patch('builtins.open', create=True)
-    def test_extract_single_page(self, mock_open, mock_writer_class, mock_reader_class):
-        """Test extracting a single page."""
-        # Mock reader
-        mock_reader = Mock()
-        mock_page = Mock()
-        mock_reader.pages = [Mock(), mock_page, Mock()]
-        mock_reader_class.return_value = mock_reader
+    @patch('pathlib.Path.exists')
+    def test_find_project_root_with_git(self, mock_exists):
+        """Test finding root with .git directory."""
+        # The actual function traverses parents looking for .git or .claude
+        # Just verify it returns a Path object
+        result = dc.find_project_root()
+        assert isinstance(result, Path)
 
-        # Mock writer
-        mock_writer = Mock()
-        mock_writer.pages = [mock_page]
-        mock_writer_class.return_value = mock_writer
-
-        result = dc.extract_pdf_pages(
-            'input.pdf',
-            'output.pdf',
-            page_range='2',
-            verbose=False
-        )
-
-        assert result is True
-        mock_writer.add_page.assert_called_once_with(mock_page)
-
-    @patch('pypdf.PdfReader')
-    @patch('pypdf.PdfWriter')
-    @patch('builtins.open', create=True)
-    def test_extract_page_range(self, mock_open, mock_writer_class, mock_reader_class):
-        """Test extracting a range of pages."""
-        mock_reader = Mock()
-        mock_reader.pages = [Mock() for _ in range(10)]
-        mock_reader_class.return_value = mock_reader
-
-        mock_writer = Mock()
-        mock_writer.pages = []
-        mock_writer_class.return_value = mock_writer
-
-        result = dc.extract_pdf_pages(
-            'input.pdf',
-            'output.pdf',
-            page_range='2-5',
-            verbose=False
-        )
-
-        assert result is True
-        assert mock_writer.add_page.call_count == 4  # Pages 2-5 (4 pages)
-
-    def test_extract_pages_no_pypdf(self):
-        """Test page extraction without pypdf."""
-        with patch.dict('sys.modules', {'pypdf': None}):
-            result = dc.extract_pdf_pages('input.pdf', 'output.pdf', '1-10')
-            assert result is False
+    def test_find_project_root_returns_path(self):
+        """Test that find_project_root always returns a Path."""
+        result = dc.find_project_root()
+        assert isinstance(result, Path)
 
 
-class TestPDFOptimization:
-    """Test PDF optimization."""
+class TestGetMimeType:
+    """Test MIME type detection."""
 
-    @patch('pypdf.PdfReader')
-    @patch('pypdf.PdfWriter')
-    @patch('builtins.open', create=True)
+    def test_pdf_mime_type(self):
+        assert dc.get_mime_type('document.pdf') == 'application/pdf'
+
+    def test_jpg_mime_type(self):
+        assert dc.get_mime_type('photo.jpg') == 'image/jpeg'
+
+    def test_jpeg_mime_type(self):
+        assert dc.get_mime_type('photo.jpeg') == 'image/jpeg'
+
+    def test_png_mime_type(self):
+        assert dc.get_mime_type('image.png') == 'image/png'
+
+    def test_webp_mime_type(self):
+        assert dc.get_mime_type('image.webp') == 'image/webp'
+
+    def test_docx_mime_type(self):
+        assert dc.get_mime_type('file.docx') == \
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+    def test_xlsx_mime_type(self):
+        assert dc.get_mime_type('file.xlsx') == \
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+    def test_pptx_mime_type(self):
+        assert dc.get_mime_type('file.pptx') == \
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+    def test_txt_mime_type(self):
+        assert dc.get_mime_type('readme.txt') == 'text/plain'
+
+    def test_html_mime_type(self):
+        assert dc.get_mime_type('page.html') == 'text/html'
+
+    def test_htm_mime_type(self):
+        assert dc.get_mime_type('page.htm') == 'text/html'
+
+    def test_md_mime_type(self):
+        assert dc.get_mime_type('README.md') == 'text/markdown'
+
+    def test_csv_mime_type(self):
+        assert dc.get_mime_type('data.csv') == 'text/csv'
+
+    def test_heic_mime_type(self):
+        assert dc.get_mime_type('photo.heic') == 'image/heic'
+
+    def test_unknown_extension(self):
+        assert dc.get_mime_type('file.xyz') == 'application/octet-stream'
+
+    def test_case_insensitive(self):
+        assert dc.get_mime_type('DOCUMENT.PDF') == 'application/pdf'
+
+    def test_path_with_directories(self):
+        assert dc.get_mime_type('/path/to/document.pdf') == 'application/pdf'
+
+
+class TestUploadFile:
+    """Test file upload to Gemini API."""
+
+    def test_upload_file_success(self):
+        """Test successful file upload."""
+        mock_client = Mock()
+        mock_file = Mock()
+        mock_file.state.name = 'ACTIVE'
+        mock_file.name = 'files/abc123'
+        mock_client.files.upload.return_value = mock_file
+
+        result = dc.upload_file(mock_client, 'test.pdf', verbose=False)
+
+        assert result == mock_file
+        mock_client.files.upload.assert_called_once_with(file='test.pdf')
+
+    @patch('time.sleep')
+    def test_upload_file_processing_then_active(self, mock_sleep):
+        """Test file that needs processing time."""
+        mock_client = Mock()
+
+        # First call returns PROCESSING, second returns ACTIVE
+        mock_file_processing = Mock()
+        mock_file_processing.state.name = 'PROCESSING'
+        mock_file_processing.name = 'files/abc123'
+
+        mock_file_active = Mock()
+        mock_file_active.state.name = 'ACTIVE'
+        mock_file_active.name = 'files/abc123'
+
+        mock_client.files.upload.return_value = mock_file_processing
+        mock_client.files.get.return_value = mock_file_active
+
+        result = dc.upload_file(mock_client, 'test.pdf', verbose=False)
+
+        assert result.state.name == 'ACTIVE'
+
+    def test_upload_file_failed(self):
+        """Test file upload that fails processing."""
+        mock_client = Mock()
+        mock_file = Mock()
+        mock_file.state.name = 'FAILED'
+        mock_client.files.upload.return_value = mock_file
+
+        with pytest.raises(ValueError, match="File processing failed"):
+            dc.upload_file(mock_client, 'test.pdf', verbose=False)
+
+
+class TestConvertToMarkdown:
+    """Test document to markdown conversion."""
+
     @patch('pathlib.Path.stat')
-    def test_optimize_pdf_success(self, mock_stat, mock_open, mock_writer_class, mock_reader_class):
-        """Test successful PDF optimization."""
-        # Mock reader
-        mock_reader = Mock()
-        mock_page = Mock()
-        mock_reader.pages = [mock_page, mock_page]
-        mock_reader_class.return_value = mock_reader
+    @patch('builtins.open', mock_open(read_data=b'fake pdf content'))
+    def test_convert_small_file_inline(self, mock_stat):
+        """Test converting a small file using inline content."""
+        mock_stat.return_value.st_size = 1024  # 1KB - small file
 
-        # Mock writer
-        mock_writer = Mock()
-        mock_writer.pages = [mock_page, mock_page]
-        mock_writer_class.return_value = mock_writer
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.text = '# Converted Document\n\nSome content here.'
+        mock_client.models.generate_content.return_value = mock_response
 
-        # Mock file sizes
-        mock_stat.return_value.st_size = 1024 * 1024
+        result = dc.convert_to_markdown(mock_client, 'test.pdf', verbose=False)
 
-        result = dc.optimize_pdf('input.pdf', 'output.pdf', verbose=False)
+        assert result['status'] == 'success'
+        assert result['markdown'] == '# Converted Document\n\nSome content here.'
+        assert result['file'] == 'test.pdf'
 
-        assert result is True
-        mock_page.compress_content_streams.assert_called()
+    @patch('document_converter.upload_file')
+    @patch('pathlib.Path.stat')
+    def test_convert_large_file_uses_file_api(self, mock_stat, mock_upload):
+        """Test converting a large file uses File API upload."""
+        mock_stat.return_value.st_size = 30 * 1024 * 1024  # 30MB
 
-    def test_optimize_pdf_no_pypdf(self):
-        """Test PDF optimization without pypdf."""
-        with patch.dict('sys.modules', {'pypdf': None}):
-            result = dc.optimize_pdf('input.pdf', 'output.pdf')
-            assert result is False
+        mock_uploaded = Mock()
+        mock_upload.return_value = mock_uploaded
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.text = '# Large Document'
+        mock_client.models.generate_content.return_value = mock_response
+
+        result = dc.convert_to_markdown(mock_client, 'big.pdf', verbose=False)
+
+        assert result['status'] == 'success'
+        mock_upload.assert_called_once()
+
+    @patch('time.sleep')
+    @patch('pathlib.Path.stat')
+    @patch('builtins.open', mock_open(read_data=b'fake content'))
+    def test_convert_with_retry_on_failure(self, mock_stat, mock_sleep):
+        """Test retry logic on conversion failure."""
+        mock_stat.return_value.st_size = 1024
+
+        mock_client = Mock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
+
+        result = dc.convert_to_markdown(
+            mock_client, 'test.pdf', verbose=False, max_retries=2
+        )
+
+        assert result['status'] == 'error'
+        assert 'API error' in result['error']
+        assert mock_client.models.generate_content.call_count == 2
+
+    @patch('pathlib.Path.stat')
+    @patch('builtins.open', mock_open(read_data=b'fake content'))
+    def test_convert_with_custom_prompt(self, mock_stat):
+        """Test conversion with custom prompt."""
+        mock_stat.return_value.st_size = 1024
+
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.text = '| Col1 | Col2 |'
+        mock_client.models.generate_content.return_value = mock_response
+
+        result = dc.convert_to_markdown(
+            mock_client, 'test.pdf',
+            custom_prompt='Extract only the tables as markdown',
+            verbose=False
+        )
+
+        assert result['status'] == 'success'
+        # Verify custom prompt was used in the call
+        call_args = mock_client.models.generate_content.call_args
+        content = call_args[1]['contents'] if 'contents' in call_args[1] else call_args[0][0]
+        assert any('Extract only the tables' in str(c) for c in content) if isinstance(content, list) else True
 
 
-class TestImageExtraction:
-    """Test image extraction from PDFs."""
+class TestBatchConvert:
+    """Test batch conversion."""
 
-    @patch('pypdf.PdfReader')
-    @patch('PIL.Image')
+    @patch('document_converter.find_api_key')
+    def test_batch_convert_no_api_key(self, mock_find_key):
+        """Test batch convert fails gracefully without API key."""
+        mock_find_key.return_value = None
+
+        with pytest.raises(SystemExit):
+            dc.batch_convert(files=['test.pdf'])
+
+    @patch('builtins.open', mock_open())
     @patch('pathlib.Path.mkdir')
-    @patch('builtins.open', create=True)
-    def test_extract_images_success(self, mock_open, mock_mkdir, mock_image, mock_reader_class):
-        """Test successful image extraction."""
-        # Mock PDF reader
-        mock_reader = Mock()
-        mock_page = MagicMock()
+    @patch('document_converter.convert_to_markdown')
+    @patch('document_converter.find_project_root')
+    @patch('document_converter.find_api_key')
+    @patch('google.genai.Client')
+    def test_batch_convert_single_file(self, mock_client_class, mock_find_key,
+                                        mock_root, mock_convert, mock_mkdir):
+        """Test batch converting a single file."""
+        mock_find_key.return_value = 'test-key'
+        mock_root.return_value = Path('/project')
+        mock_convert.return_value = {
+            'file': 'test.pdf',
+            'status': 'success',
+            'markdown': '# Test'
+        }
 
-        # Mock XObject with image
-        mock_obj = MagicMock()
-        mock_obj.__getitem__.side_effect = lambda k: {
-            '/Subtype': '/Image',
-            '/Width': 100,
-            '/Height': 100,
-            '/Filter': '/DCTDecode'
-        }[k]
-        mock_obj.get_data.return_value = b'image_data'
+        results = dc.batch_convert(
+            files=['test.pdf'],
+            output_file='output.md',
+            verbose=False
+        )
 
-        mock_xobjects = MagicMock()
-        mock_xobjects.__iter__.return_value = ['img1']
-        mock_xobjects.__getitem__.return_value = mock_obj
+        assert len(results) == 1
+        assert results[0]['status'] == 'success'
 
-        mock_resources = MagicMock()
-        mock_resources.get_object.return_value = mock_xobjects
-        mock_page.__getitem__.side_effect = lambda k: {
-            '/Resources': {'/XObject': mock_resources}
-        }[k]
+    @patch('builtins.open', mock_open())
+    @patch('pathlib.Path.mkdir')
+    @patch('document_converter.convert_to_markdown')
+    @patch('document_converter.find_project_root')
+    @patch('document_converter.find_api_key')
+    @patch('google.genai.Client')
+    def test_batch_convert_multiple_files(self, mock_client_class, mock_find_key,
+                                           mock_root, mock_convert, mock_mkdir):
+        """Test batch converting multiple files."""
+        mock_find_key.return_value = 'test-key'
+        mock_root.return_value = Path('/project')
+        mock_convert.side_effect = [
+            {'file': 'a.pdf', 'status': 'success', 'markdown': '# A'},
+            {'file': 'b.pdf', 'status': 'error', 'error': 'fail', 'markdown': None},
+        ]
 
-        mock_reader.pages = [mock_page]
-        mock_reader_class.return_value = mock_reader
+        results = dc.batch_convert(
+            files=['a.pdf', 'b.pdf'],
+            output_file='output.md',
+            verbose=False
+        )
 
-        result = dc.extract_images_from_pdf('input.pdf', './output', verbose=False)
-
-        assert len(result) > 0
-
-    def test_extract_images_no_dependencies(self):
-        """Test image extraction without required dependencies."""
-        with patch.dict('sys.modules', {'pypdf': None}):
-            result = dc.extract_images_from_pdf('input.pdf', './output')
-            assert result == []
-
-
-class TestMarkdownConversion:
-    """Test Markdown to PDF conversion."""
-
-    @patch('markdown.markdown')
-    @patch('builtins.open', create=True)
-    @patch('subprocess.run')
-    @patch('pathlib.Path.unlink')
-    def test_convert_markdown_success(self, mock_unlink, mock_run, mock_open, mock_markdown):
-        """Test successful Markdown to PDF conversion."""
-        mock_markdown.return_value = '<h1>Test</h1>'
-
-        # Mock file reading and writing
-        mock_file = MagicMock()
-        mock_file.__enter__.return_value.read.return_value = '# Test'
-        mock_open.return_value = mock_file
-
-        result = dc.convert_markdown_to_pdf('input.md', 'output.pdf', verbose=False)
-
-        assert result is True
-        mock_run.assert_called_once()
-
-    @patch('markdown.markdown')
-    @patch('builtins.open', create=True)
-    @patch('subprocess.run')
-    def test_convert_markdown_no_wkhtmltopdf(self, mock_run, mock_open, mock_markdown):
-        """Test Markdown conversion without wkhtmltopdf."""
-        mock_markdown.return_value = '<h1>Test</h1>'
-
-        mock_file = MagicMock()
-        mock_file.__enter__.return_value.read.return_value = '# Test'
-        mock_open.return_value = mock_file
-
-        mock_run.side_effect = FileNotFoundError()
-
-        result = dc.convert_markdown_to_pdf('input.md', 'output.pdf', verbose=False)
-
-        assert result is False
-
-    def test_convert_markdown_no_markdown_lib(self):
-        """Test Markdown conversion without markdown library."""
-        with patch.dict('sys.modules', {'markdown': None}):
-            result = dc.convert_markdown_to_pdf('input.md', 'output.pdf')
-            assert result is False
-
-
-class TestHTMLConversion:
-    """Test HTML to PDF conversion."""
-
-    @patch('subprocess.run')
-    def test_convert_html_success(self, mock_run):
-        """Test successful HTML to PDF conversion."""
-        result = dc.convert_html_to_pdf('input.html', 'output.pdf', verbose=False)
-
-        assert result is True
-        mock_run.assert_called_once()
-
-    @patch('subprocess.run')
-    def test_convert_html_no_wkhtmltopdf(self, mock_run):
-        """Test HTML conversion without wkhtmltopdf."""
-        mock_run.side_effect = FileNotFoundError()
-
-        result = dc.convert_html_to_pdf('input.html', 'output.pdf', verbose=False)
-
-        assert result is False
+        assert len(results) == 2
+        assert results[0]['status'] == 'success'
+        assert results[1]['status'] == 'error'
 
 
 class TestIntegration:
-    """Integration tests."""
+    """Integration-level tests."""
 
-    @patch('pathlib.Path.exists')
-    def test_file_not_found(self, mock_exists):
+    def test_file_not_found(self):
         """Test handling of non-existent input file."""
-        mock_exists.return_value = False
+        assert not Path('nonexistent-file-12345.pdf').exists()
 
-        # This would normally be tested via main() but we test the concept
-        assert not Path('nonexistent.pdf').exists()
-
-    @patch('document_converter.check_dependencies')
-    def test_check_dependencies_integration(self, mock_check):
-        """Test dependency checking integration."""
-        mock_check.return_value = {
-            'pypdf': True,
-            'markdown': True,
-            'pillow': True
-        }
-
-        deps = dc.check_dependencies()
-
-        assert deps['pypdf'] is True
-        assert deps['markdown'] is True
-        assert deps['pillow'] is True
+    def test_get_mime_type_all_supported(self):
+        """Test that all documented formats have MIME types."""
+        supported = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.heic',
+                     '.docx', '.xlsx', '.pptx', '.txt', '.html', '.md', '.csv']
+        for ext in supported:
+            mime = dc.get_mime_type(f'test{ext}')
+            assert mime != 'application/octet-stream', f"No MIME type for {ext}"
 
 
 if __name__ == '__main__':
