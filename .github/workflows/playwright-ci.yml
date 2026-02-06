@@ -1,0 +1,108 @@
+name: Playwright E2E质量门检查
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  playwright-tests:
+    name: E2E测试质量门
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🟢 安装Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 安装依赖
+        run: npm ci
+
+      - name: 🎭 安装Playwright浏览器
+        run: npx playwright install --with-deps chromium
+
+      - name: 🧪 运行Playwright测试
+        run: npx playwright test
+        continue-on-error: false
+
+      - name: 📊 上传HTML测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: 📄 上传测试结果（JSON）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-json
+          path: test-results/results.json
+          retention-days: 7
+
+      - name: 📄 上传测试结果（JUnit）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-junit
+          path: test-results/junit.xml
+          retention-days: 7
+
+      - name: ✅ 质量门评估
+        if: always()
+        run: |
+          echo "📊 测试结果摘要"
+          if [ -f test-results/results.json ]; then
+            cat test-results/results.json | jq '.stats'
+          fi
+          
+          # 检查测试是否全部通过
+          if [ ${{ job.status }} != 'success' ]; then
+            echo "❌ 质量门检查失败：存在失败的测试"
+            exit 1
+          fi
+          
+          echo "✅ 质量门检查通过：所有测试通过"
+
+      - name: 💬 评论PR（可选）
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let comment = '## 🎭 Playwright E2E测试报告\n\n';
+            
+            try {
+              const results = JSON.parse(fs.readFileSync('test-results/results.json', 'utf8'));
+              const stats = results.stats;
+              
+              comment += `| 指标 | 数量 |\n`;
+              comment += `|------|------|\n`;
+              comment += `| ✅ 通过 | ${stats.expected} |\n`;
+              comment += `| ❌ 失败 | ${stats.unexpected} |\n`;
+              comment += `| ⏭️ 跳过 | ${stats.skipped} |\n`;
+              comment += `| ⚠️ 不稳定 | ${stats.flaky} |\n`;
+              
+              if (stats.unexpected === 0 && stats.flaky === 0) {
+                comment += `\n### ✅ 质量门检查通过！\n`;
+              } else {
+                comment += `\n### ❌ 质量门检查失败！\n`;
+                comment += `请修复失败的测试后重新提交。\n`;
+              }
+            } catch (error) {
+              comment += `无法读取测试结果: ${error.message}\n`;
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
