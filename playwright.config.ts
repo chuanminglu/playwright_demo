@@ -14,8 +14,6 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    // saucedemo 使用 data-test 属性，需覆盖默认的 data-testid
-    testIdAttribute: 'data-test',
   },
   projects: [
     {

@@ -160,11 +160,16 @@ URL: {PAGE_URL}
 # 输出要求
 
 ## 选择器优先级（按优先级使用）
-1. getByTestId('xxx')        - data-test / data-testid
-2. getByRole('button', ...)  - 语义化角色
-3. getByLabel('...')         - 表单 label 关联
-4. getByText('...')          - 可见文本
-5. locator('#id')            - HTML ID（最后选择）
+1. `locator('[data-test="xxx"]')`   - **推荐**，直接匹配属性名，无需改 config
+2. `getByRole('button', ...)`       - 语义化角色（无 data-test 时使用）
+3. `getByLabel('...')`              - 表单 label 关联
+4. `getByText('...')`               - 可见文本
+5. `locator('#id')`                 - HTML ID（最后选择）
+
+> ⚠️ **不推荐**直接使用 `getByTestId('xxx')`：其默认绑定 `data-testid`，
+> 当被测站点使用 `data-test` 等其他属性名时会静默失败（元素等待超时）。
+> 如坚持使用 `getByTestId`，必须在 `playwright.config.ts` 中同步设置：
+> `testIdAttribute: 'data-test'`（以实际属性名为准）。
 
 ## POM 类结构（必须包含 4 类成员）
 1. Locators    - 所有选择器，声明为 readonly

@@ -10,10 +10,10 @@ export class LoginPage {
   readonly errorMessage: Locator;
 
   constructor(private page: Page) {
-    this.usernameInput = page.getByTestId('username');
-    this.passwordInput = page.getByTestId('password');
-    this.loginButton   = page.getByTestId('login-button');
-    this.errorMessage  = page.getByTestId('error');
+    this.usernameInput = page.locator('[data-test="username"]');
+    this.passwordInput = page.locator('[data-test="password"]');
+    this.loginButton   = page.locator('[data-test="login-button"]');
+    this.errorMessage  = page.locator('[data-test="error"]');
   }
 
   // --- Navigation ---
