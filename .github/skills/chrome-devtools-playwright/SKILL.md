@@ -1,109 +1,206 @@
 ---
 name: chrome-devtools-playwright
-description: AI辅助E2E测试工作流，结合Chrome DevTools MCP探索与Playwright测试生成。用于探索新页面进行测试、生成功能测试用例文档、生成Page Object Model和Playwright测试代码、诊断测试失败、集成CI/CD流水线。
+description: AI辅助E2E测试工作流，遵循需求驱动的专业测试流程：从User Story生成测试用例 → MCP定向探索页面提取选择器 → 生成POM和测试脚本 → CI执行 → MCP诊断失败。用于从需求出发建立完整E2E测试套件。
 ---
 
 # Chrome DevTools + Playwright 测试技能
 
-混合工作流: MCP探索 → 生成测试文档 → 生成测试代码 → CI执行 → MCP诊断
+**需求驱动工作流**: 先从业务需求生成测试用例，再用 MCP 探索页面找选择器，最后生成代码执行
+
+## 核心原则
+
+> **测试用例来源于需求，不来源于 UI 探索**  
+> MCP 探索的目的是「找到如何实现测试」，而不是「发现要测什么」
 
 ## 适用场景
 
-- 探索新页面/功能的测试覆盖
-- 生成功能测试用例文档（先文档后代码）
-- 生成 Playwright 测试代码（Page Object Model）
-- 诊断 CI/CD 测试失败
-- 从零构建 E2E 测试套件
+- 从 User Story / 验收标准 / 需求文档出发，建立 E2E 测试套件
+- 已有测试用例文档，需要生成 POM 和测试脚本
+- 诊断 CI/CD 中失败的测试
 
 ## 5阶段工作流
 
 ```
-EXPLORE → DOCUMENT → CODE → EXECUTE → DIAGNOSE
-  (MCP)     (AI)     (AI)    (CI)      (MCP)
+ANALYZE → EXPLORE → CODE → EXECUTE → DIAGNOSE
+  (AI)     (MCP)    (AI)    (CI)      (MCP)
     ↑                                    │
     └────────── (on failure) ────────────┘
 ```
 
-## Phase 1: Explore (MCP探索)
+| 阶段 | 驱动工具 | 输入 | 输出 |
+|------|---------|------|------|
+| **1. Analyze** | AI (Prompt 0) | User Story / 验收标准 | 测试用例文档 |
+| **2. Explore** | MCP | 测试用例（涉及哪些页面） | 各页面选择器表 |
+| **3. Code** | AI (Prompt 1 → Prompt 2) | 测试用例 + 选择器 | POM 类 + 测试脚本 |
+| **4. Execute** | Playwright / CI | 测试脚本 | 测试报告 |
+| **5. Diagnose** | MCP + AI | 失败信息 | 根因 + 修复方案 |
+
+---
+
+## Phase 1: Analyze（需求 → 测试用例）
+
+**这是整个流程的起点，测试用例必须从需求中推导，而不是从 UI 归纳。**
+
+### 输入
+- User Story（用户故事）
+- 验收标准（AC）
+- 业务规则、约束条件
+
+### 执行
+使用 `references/prompts.md` → **Prompt 0**，输入需求材料，让 AI 生成测试用例文档。
+
+### 输出位置
+```
+docs/test-cases/
+└── {功能名称}-测试用例.md
+```
+
+### 测试用例文档结构
+```markdown
+# {功能名称}功能测试用例清单
+
+## 测试范围
+- 关联用户故事、总数、P0/P1/P2 分布、可自动化数量
+
+## 测试覆盖矩阵
+| 验收规则ID | 规则描述 | 对应测试用例 | 覆盖状态 |
+
+## 功能测试用例列表
+| 用例编号 | 系统 | 功能模块 | 用例概述 | 优先级 | 标签 |
+| 前提条件 | 输入数据或操作 | 输出数据或操作 | 预期结果 | 测试结果 |
+```
+
+### 覆盖场景（必须包含）
+- ✅ P0 — 正常路径（Happy Path）：核心业务流程端到端
+- ✅ P1 — 参数验证：格式、长度、类型约束
+- ✅ P1 — 异常场景：错误提示、边界值
+- ✅ P2 — 性能/安全（按需）
+
+See: `references/prompts.md` → Prompt 0
+
+---
+
+## Phase 2: Explore（定向探索，提取选择器）
+
+**目标**: 针对测试用例中涉及的页面，提取实现测试所需的选择器，**不做全站扫描**。
+
+### 2.1 只探索用例涉及的页面
+
+先阅读测试用例文档，识别需要哪些页面：
+```
+// 例：登录测试用例涉及的页面
+- /login（登录页）
+- /dashboard（登录成功后的目标页）
+```
+
+### 2.2 定向探索每个页面
 
 ```javascript
-// 1. 打开页面
-mcp_io_github_chr_new_page({ url: TARGET_URL })
-
-// 2. 截图
+// Step 1: 打开页面截图
+mcp_io_github_chr_new_page({ url: "TARGET_PAGE_URL" })
 mcp_io_github_chr_take_screenshot({ fullPage: true })
 
-// 3. DOM快照
+// Step 2: 获取 DOM 快照（含 UID）
 mcp_io_github_chr_take_snapshot({ verbose: true })
 
-// 4. 提取选择器
+// Step 3: 提取 data-test / data-testid 选择器
 mcp_io_github_chr_evaluate_script({
   function: `() => {
-    const elements = {};
-    document.querySelectorAll('[data-testid], [data-test]').forEach(el => {
-      elements[el.dataset.testid || el.dataset.test] = el.tagName;
+    const result = {};
+    document.querySelectorAll('[data-test], [data-testid], input, button, a').forEach(el => {
+      const key = el.dataset?.test || el.dataset?.testid || el.id;
+      if (key) result[key] = { tag: el.tagName, type: el.type, text: el.innerText?.slice(0,30) };
     });
-    return elements;
+    return result;
   }`
 })
 
-// 5. 验证交互
-mcp_io_github_chr_click({ uid: "TARGET_UID" })
-mcp_io_github_chr_wait_for({ text: "EXPECTED_TEXT" })
+// Step 4: 验证关键交互（按测试用例步骤验证可行性）
+mcp_io_github_chr_fill({ uid: "USERNAME_UID", value: "test_user" })
+mcp_io_github_chr_click({ uid: "SUBMIT_UID" })
+mcp_io_github_chr_wait_for({ text: "EXPECTED_RESULT_TEXT", timeout: 3000 })
+mcp_io_github_chr_take_screenshot()
 ```
 
-## Phase 2: Document (生成测试文档) 🆕
+### 2.3 选择器优先级
 
-**在编写代码之前，先生成功能测试用例文档！**
+| 优先级 | 方法 | 稳定性 |
+|--------|------|--------|
+| 1 | `data-test` / `data-testid` | ⭐⭐⭐ 最稳定 |
+| 2 | Role + Name | ⭐⭐⭐ |
+| 3 | Label / Placeholder | ⭐⭐ |
+| 4 | 文本内容 | ⭐ |
+| 5 | CSS class | ⚠️ 避免 |
 
-### 输出位置
-```
-docs/
-└── test-cases/
-    └── {功能名称}-测试用例.md
-```
+See: `references/prompts.md` → Prompt 1（生成 POM）
 
-### 测试用例表格字段
+---
 
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| 用例编号 | `{系统}-{模块}-{序号}` | `SWAG-CART-001` |
-| 用例概述 | 简短描述（10-20字） | `正常添加商品到购物车` |
-| 优先级 | P0核心/P1重要/P2辅助 | `P0` |
-| 标签 | 测试类型 | `功能测试,可自动化` |
-| 前提条件 | 执行前置条件 | `1. 用户已登录` |
-| 输入数据或操作 | 详细步骤 | `1. 点击【添加】按钮` |
-| 预期结果 | 量化验证点 | `购物车显示"1"` |
+## Phase 3: Code（生成 POM → 生成测试脚本）
 
-See: `references/test-case-template.md` - 测试用例文档模板
-See: `references/prompts.md` → Prompt 6 - 生成测试用例文档
+**顺序严格**: 先生成 Page Objects，再生成测试脚本
 
-## Phase 3: Code (生成测试代码)
+### 3.1 生成 Page Objects
 
-**顺序:** 先 POM → 再 Tests
-
-### 输出位置
-```
-pages/                  # Page Objects (选择器在这里)
-├── LoginPage.ts
-└── index.ts
-tests/                  # 测试脚本 (无选择器)
-├── fixtures/           # 测试数据
-└── *.spec.ts
-```
+**输入**: Explore 阶段的选择器 + 截图  
+**使用**: `references/prompts.md` → Prompt 1  
+**输出位置**: `pages/{PageName}Page.ts`
 
 ```typescript
-// ❌ 选择器写在测试里 (错误)
-await page.click('.submit-btn');
+// ✅ POM 负责所有选择器和交互方法
+export class LoginPage {
+  readonly usernameInput = this.page.getByTestId('username');
+  readonly loginButton   = this.page.getByTestId('login-button');
+  async login(user: string, pass: string) { ... }
+}
 
-// ✅ 调用POM方法 (正确)
-await loginPage.submit();
+// ❌ 测试脚本中不能有原始选择器
+await page.click('[data-test="login-button"]');  // 错误
+
+// ✅ 测试脚本只调用 POM 方法
+await loginPage.login('standard_user', 'secret_sauce');  // 正确
 ```
 
-See: `references/prompts.md` → Prompt 1, 2
-See: `references/page-object-template.md` - POM模板
+### 3.2 生成测试脚本
 
-## Phase 4: Execute (CI执行)
+**输入**: 测试用例文档（标记「可自动化」的条目）+ POM 类  
+**使用**: `references/prompts.md` → Prompt 2  
+**输出位置**: `tests/{feature}.spec.ts`
+
+**映射规则**:
+| 测试用例字段 | 代码元素 |
+|-------------|---------|
+| 前提条件 | `test.beforeEach()` 或 `test.step()` |
+| 输入数据或操作 | POM 方法调用（`await` 语句） |
+| 预期结果 | `expect()` 断言 |
+| 用例概述 | `test('用例概述', ...)` 名称 |
+
+### 输出文件结构
+
+```
+pages/                          # Page Objects（选择器在这里）
+├── LoginPage.ts
+├── InventoryPage.ts
+└── index.ts                    # 统一导出
+tests/
+├── fixtures/
+│   └── {feature}-data.ts       # 测试数据
+└── {feature}.spec.ts           # 测试脚本（无原始选择器）
+```
+
+See: `references/page-object-template.md` — POM 模板  
+See: `references/prompts.md` → Prompt 1, Prompt 2
+
+---
+
+## Phase 4: Execute（执行）
+
+```bash
+npx playwright test                    # 全部测试
+npx playwright test login.spec         # 指定文件
+npx playwright test --debug            # 调试模式
+npx playwright test --ui               # UI 交互模式
+```
 
 ```yaml
 # .github/workflows/e2e.yml
@@ -123,90 +220,104 @@ jobs:
         with: { name: test-results, path: test-results/ }
 ```
 
-## Phase 5: Diagnose (故障诊断)
+---
+
+## Phase 5: Diagnose（故障诊断）
 
 ```javascript
-// 控制台错误
+// 1. 重现失败场景
+mcp_io_github_chr_navigate_page({ type: "url", url: FAILING_URL })
+// ... 重复失败操作
+
+// 2. 检查控制台错误
 mcp_io_github_chr_list_console_messages({ types: ["error"] })
 
-// 网络失败
+// 3. 检查网络请求
 mcp_io_github_chr_list_network_requests({ resourceTypes: ["xhr", "fetch"] })
 
-// 当前状态
+// 4. 截图查看当前状态
 mcp_io_github_chr_take_screenshot()
 ```
 
-See: `references/diagnosis.md` - 故障诊断模式
+| 症状 | MCP 命令 | 检查项 |
+|------|---------|--------|
+| 元素未找到 | `take_snapshot` | 选择器是否变更 |
+| 等待超时 | `list_network_requests` | API 是否慢/失败 |
+| 值断言失败 | `list_console_messages` + `evaluate_script` | 实际值是什么 |
+| 视觉异常 | `take_screenshot` | 页面状态对比 |
+
+See: `references/diagnosis.md` — 故障诊断详细模式
+
+---
 
 ## 推荐目录结构
 
 ```
 project/
-├── docs/                         # 测试文档
-│   └── test-cases/               # 测试用例文档
+├── docs/
+│   └── test-cases/                   # Phase 1 输出
 │       └── {功能}-测试用例.md
-├── pages/                        # Page Objects
+├── pages/                            # Phase 3 输出（POM）
 │   ├── LoginPage.ts
 │   └── index.ts
-├── tests/                        # 测试脚本
-│   ├── fixtures/                 # 测试数据
-│   └── *.spec.ts
+├── tests/                            # Phase 3 输出（脚本）
+│   ├── fixtures/
+│   │   └── {feature}-data.ts
+│   └── {feature}.spec.ts
+├── .github/workflows/e2e.yml
 ├── playwright.config.ts
 └── package.json
 ```
 
-## 🚀 AUTO模式：一键生成全部测试
+---
 
-当测试用例文档已就绪，使用以下流程自动完成所有测试：
+## 🚀 AUTO 模式：文档已就绪时一键生成代码
+
+当 Phase 1 的测试用例文档（`docs/test-cases/*.md`）已完整，可跳过 Prompt 0 直接触发：
 
 ```
-[测试用例文档] → AUTO → [POM] + [测试代码] + [CI配置]
+[测试用例文档] → AUTO → [POM] + [测试脚本] + [CI配置]
 ```
 
-**触发方式:**
+**触发方式**:
 ```
-请根据测试用例文档，自动生成所有测试
+请根据测试用例文档，自动生成所有测试代码
 
 输入: docs/test-cases/{功能}-测试用例.md
 输出:
-- pages/*.ts (所有Page Object)
-- tests/*.spec.ts (所有测试脚本)
-- .github/workflows/e2e.yml (CI配置)
+- pages/*.ts            (所有 Page Objects)
+- tests/*.spec.ts       (所有测试脚本)
+- .github/workflows/e2e.yml
 ```
 
-**AI执行步骤:**
-1. 读取测试用例文档，提取所有「可自动化」用例
-2. 分析涉及的页面，生成 Page Objects
-3. 按功能模块生成测试脚本
-4. 生成 CI 配置文件
-5. 输出执行命令
+See: `references/prompts.md` → Prompt 3（AUTO 模式）
 
-See: `references/prompts.md` → Prompt 8 - AUTO模式一键生成
+---
 
 ## 快速开始
 
-### 标准流程（5阶段）
+### 标准流程（从需求开始）
+
 ```bash
-# 1. 探索页面 (Phase 1) - 使用MCP命令
-# 2. 生成测试文档 (Phase 2) - AI生成 docs/test-cases/*.md
-# 3. 生成测试代码 (Phase 3) - AI生成 pages/*.ts + tests/*.spec.ts
-# 4. 执行测试 (Phase 4)
+# Phase 1: AI 生成测试用例（使用 Prompt 0）
+# 输出: docs/test-cases/{功能}-测试用例.md
+
+# Phase 2: MCP 定向探索各页面，提取选择器
+
+# Phase 3: AI 生成 POM（Prompt 1）和测试脚本（Prompt 2）
+# 输出: pages/*.ts + tests/*.spec.ts
+
+# Phase 4: 执行
 npx playwright test
-# 5. 诊断失败 (Phase 5) - 使用MCP命令
+
+# Phase 5: 诊断失败（使用 MCP 命令）
 ```
 
-### AUTO模式（文档已就绪）
+### 快速通道（测试用例已就绪）
+
 ```bash
-# 1. 准备测试用例文档: docs/test-cases/{功能}-测试用例.md
-# 2. 执行: "请根据测试用例文档，自动生成所有测试"
-# 3. AI自动生成: pages/*.ts + tests/*.spec.ts + CI配置
-# 4. 运行测试: npx playwright test
+# 1. 确认已有 docs/test-cases/{功能}-测试用例.md
+# 2. MCP 探索选择器（Phase 2）
+# 3. 触发 AUTO 模式（Prompt 3）自动生成所有代码
+npx playwright test
 ```
-
-## 参考文档
-
-- `references/workflow.md` - 详细5阶段工作流
-- `references/prompts.md` - AI生成提示词
-- `references/test-case-template.md` - 测试用例文档模板 🆕
-- `references/page-object-template.md` - POM模板
-- `references/diagnosis.md` - 故障诊断模式

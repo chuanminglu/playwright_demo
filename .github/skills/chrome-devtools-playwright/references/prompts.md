@@ -1,226 +1,418 @@
-# AI Generation Prompts
+# AI 辅助 Prompt 库
 
-## Prompt 1: Generate Page Object
+> 本文件包含 6 个核心 Prompt，按工作流顺序排列。
+> 在每个 Prompt 中，`{...}` 表示需要填写的内容，`---INPUT---` 后为粘贴材料区。
 
-```
-Based on the page exploration results, generate a Playwright Page Object Model.
+---
 
-**Page URL:** {URL}
+## Prompt 0：从 User Story 生成功能测试用例
 
-**Elements found (from MCP snapshot):**
-{PASTE_SNAPSHOT_OR_SELECTORS}
+**使用时机**: Phase 1（Analyze），有需求文档时优先使用  
+**输出位置**: `docs/test-cases/{功能名称}-测试用例.md`
 
-**Generate a TypeScript class with:**
-1. Locators - readonly Locator properties
-2. Actions - methods for user interactions  
-3. Getters - methods returning page data
-4. Assertions - expect helper methods
+````
+# 角色定义
 
-**Locator priority:** data-testid > data-test > role+name > label > text > class
+你是一位资深功能测试工程师，拥有12年软件测试和验收测试经验，擅长：
 
-**Output location:** tests/pages/{PageName}Page.ts
-```
+- 功能测试用例设计与测试场景覆盖分析
+- 测试步骤编写与验收标准验证
+- 测试用例优先级分级与风险评估
+- 边界值分析、等价类划分和异常场景设计
+- E2E测试转化与自动化测试脚本设计
 
-## Prompt 2: Generate Test Specs
+---
 
-```
-Based on the {PageName}Page Page Object and test case document, generate Playwright tests.
+# 任务
 
-**Test case document:** docs/test-cases/{功能}-测试用例.md
+基于以下用户故事和验收规则，生成完整的功能测试用例清单，覆盖
+正常路径、异常场景、边界值和参数验证。
 
-**Requirements:**
-- Group with test.describe
-- Common setup in test.beforeEach
-- One focus per test
-- Descriptive test names (Chinese supported)
-- Use POM methods only (no raw selectors)
-- Match test cases marked as "可自动化"
+---INPUT---
 
-**Output location:** tests/{feature}.spec.ts
-```
+## 材料1：用户故事
+{粘贴 User Story，含验收标准}
 
-## Prompt 3: Analyze Page for Testing
+## 材料2：验收规则清单（可选，有则必须粘贴）
+{粘贴功能规则 F:/数据规则 D:/异常规则 E:/性能规则 P:}
 
-```
-Analyze this page screenshot/snapshot for E2E testing.
+## 材料3：系统信息
+【系统名称】{系统名称}
+【功能模块】{模块路径，用-分隔，如 认证管理-用户登录}
+【测试环境】{测试 URL}
 
-**Identify:**
-1. Main functional areas
-2. Interactive elements (buttons, inputs, links)
-3. Data display regions
-4. Key user flows
+---
 
-**For each element, suggest:**
-- Test scenario
-- Recommended selector strategy
-- Edge cases to cover
-```
+# 目标
 
-## Prompt 4: Diagnose Test Failure
+## 核心目标
+生成完整、可执行、可追溯的功能测试用例，确保每条验收规则都有
+对应用例覆盖，并支持后续转化为 Playwright E2E 用例。
 
-```
-Test failed:
-{ERROR_MESSAGE}
+## 具体目标
+1. 测试覆盖完整性：覆盖正常路径/异常场景/边界值/参数验证
+2. 操作可执行性：步骤详细具体，任何测试人员可独立执行
+3. 验证点明确性：预期结果量化表达，避免"正常""成功"等模糊词
+4. E2E转化友好：步骤清晰可自动化，用「可自动化」标签标注
 
-Console output:
-{CONSOLE_MESSAGES}
+## 成功标准
+- ✅ 每条验收规则对应至少1个测试用例
+- ✅ 每个用例可独立执行（前提条件明确、步骤完整）
+- ✅ 预期结果量化可判定（✅通过/❌失败一目了然）
+- ✅ 优先级分级正确（P0核心流程 / P1重要功能 / P2辅助功能）
 
-Network requests:
-{NETWORK_REQUESTS}
+---
 
-**Analyze:**
-1. Direct cause
-2. Root cause  
-3. Fix recommendations
-4. Verification steps
-```
+# 输出要求
 
-## Prompt 5: Generate Test Data
+## 第一部分：测试范围与覆盖矩阵
 
-```
-Generate test data for {FEATURE} covering:
-- Valid inputs (happy path)
-- Boundary values
-- Invalid inputs
-- Edge cases
+    # {功能名称}功能测试用例清单
 
-**Output format:** JSON or TypeScript object
-**Output location:** tests/fixtures/{feature}-data.ts
-```
+    ## 测试范围
+    - **系统**: {系统名称}
+    - **功能模块**: {功能模块路径}
+    - **测试用例总数**: {N}（P0: N / P1: N / P2: N）
+    - **可自动化用例数**: {N}
 
-## Prompt 6: Generate Test Case Document 🆕
+    ## 测试覆盖矩阵
+    | 验收规则ID | 规则描述 | 对应用例编号 | 覆盖状态 |
+    |-----------|---------|------------|---------|
+    | F1 | ... | {用例编号} | ✅ 已覆盖 |
 
-```
-基于页面探索结果，生成功能测试用例文档。
+## 第二部分：测试用例表格
 
-**系统名称:** {SYSTEM_NAME}
-**功能模块:** {MODULE_PATH}
-**页面URL:** {URL}
+    | 用例编号 | 系统 | 功能模块 | 用例概述 | 优先级 | 标签 | 前提条件 | 输入数据或操作 | 输出数据或操作 | 预期结果 | 测试结果 |
+    |---------|------|---------|---------|-------|-----|---------|--------------|--------------|---------|---------|
 
-**探索结果:**
-{PASTE_EXPLORATION_RESULTS}
+## 编号规则
+格式: {系统简称}-{模块简称}-{序号三位}   示例: SWAG-LOGIN-001
 
-**生成要求:**
-1. 使用Markdown表格格式
-2. 包含测试覆盖矩阵
-3. 每个功能生成5-15个测试用例
-4. 优先级分布：P0(20%) / P1(50%) / P2(30%)
-5. 标记可自动化的用例
+## 优先级
+- P0：核心流程，阻塞性功能
+- P1：参数验证/异常处理/边界值
+- P2：性能/安全/非核心辅助功能
 
-**测试用例表格字段:**
-- 用例编号: {系统}-{模块}-{序号}
-- 系统
-- 功能模块
-- 用例概述
-- 优先级 (P0/P1/P2)
-- 标签 (功能测试,异常测试,边界测试,可自动化)
-- 前提条件
-- 输入数据或操作 (详细步骤，使用编号列表)
-- 预期结果 (量化，使用编号列表)
-- 测试结果 (默认"待测试")
+## 标签
+可选值: 功能测试 / 边界测试 / 异常测试 / 参数验证 / 性能测试 / 安全测试
+必要时追加: 可自动化（标识可转化为 Playwright 测试脚本的用例）
 
-**覆盖场景:**
-1. 正常路径 (P0)
-2. 参数验证 (P1)
-3. 异常场景 (P1)
-4. 边界值 (P1-P2)
+## 预期结果编写规范（强制）
+❌ 禁止: "系统正常响应" "页面显示正确" "操作成功"
+✅ 要求:
+  - 显示提示文字'xxx'
+  - 页面跳转到 /inventory.html
+  - 购物车角标显示数字'2'
+  - 接口响应时间 < 2秒
 
-**输出位置:** docs/test-cases/{功能名称}-测试用例.md
+## 数量参考
+- 简单功能（单一输入表单）: 5-8 个用例
+- 中等功能（用户登录）: 8-12 个用例
+- 复杂功能（完整购物流程）: 12-20 个用例
 
-**参考模板:** references/test-case-template.md
-```
+## 信息不足时
+合理推断并标注:（推断，需与开发确认），将待确认项记录到
+"测试备注"列，不要遗漏或跳过。
 
-## Prompt 7: Convert Test Case to Code 🆕
+---
 
-```
-将测试用例文档转化为Playwright测试代码。
+直接输出完整 Markdown 文档，不要有任何前言或解释。
+````
 
-**测试用例文档:** docs/test-cases/{功能}-测试用例.md
+---
 
-**Page Objects:**
-{PASTE_POM_DEFINITIONS}
+## Prompt 1：生成 Page Object Model（POM）
 
-**转化规则:**
-1. 只转化标记为"可自动化"的用例
-2. 前提条件 → test.beforeEach 或 test.step
-3. 输入数据或操作 → await 语句
-4. 预期结果 → expect() 断言
-5. 用例概述 → test 名称
+**使用时机**: Phase 3（Code），Explore 完成选择器提取后  
+**输出位置**: `pages/{PageName}Page.ts`
 
-**输出位置:** tests/{feature}.spec.ts
-```
+````
+# 角色定义
 
-## Prompt 8: AUTO模式 - 一键生成全部测试 🆕
+你是一位资深 Playwright 自动化测试工程师，专长 Page Object Model
+设计，熟悉 TypeScript 和 Playwright Locator API。
 
-```
-根据测试用例文档，自动生成所有测试代码。
+---
 
-**输入:** docs/test-cases/{功能}-测试用例.md
+# 任务
 
-**执行步骤:**
+根据以下探索数据，为指定页面生成 TypeScript 的 Page Object 类。
 
-### Step 1: 分析测试文档
-- 读取测试用例文档
-- 提取所有标记为"可自动化"的用例
-- 识别涉及的页面和功能模块
+---INPUT---
 
-### Step 2: 生成 Page Objects
-对每个涉及的页面，生成:
-- pages/{PageName}Page.ts
-- 包含所有需要的选择器和方法
+## 目标页面
+URL: {PAGE_URL}
+页面名称: {PageName}
 
-### Step 3: 生成 pages/index.ts
-```typescript
-export * from './LoginPage';
-export * from './InventoryPage';
-// ... 导出所有Page Objects
-```
+## 选择器表
+| data-test / data-testid | HTML ID | 元素类型 | 用途 |
+|------------------------|---------|---------|------|
+{粘贴 Phase 2 整理的选择器表}
 
-### Step 4: 生成测试脚本
-按功能模块分组，生成:
-- tests/{module}.spec.ts
-- 每个测试对应一个用例
-- 使用 POM 方法
+## 测试用例中涉及的交互
+{从测试用例文档中提取该页面的操作步骤，如：
+- 正常登录：填写用户名 → 填写密码 → 点击登录
+- 登录失败：同上，验证错误提示出现
+- 跳转到 /next-page}
 
-### Step 5: 生成 CI 配置
-- .github/workflows/e2e.yml
+---
 
-### Step 6: 生成配置文件
-- playwright.config.ts
-- package.json (如不存在)
+# 输出要求
 
-**输出结构:**
-```
-project/
-├── docs/test-cases/          # 已有
-├── pages/                    # 生成
-│   ├── {PageName}Page.ts
-│   └── index.ts
-├── tests/                    # 生成
-│   └── {module}.spec.ts
-├── .github/workflows/e2e.yml # 生成
-├── playwright.config.ts      # 生成
-└── package.json              # 生成/更新
-```
+## 选择器优先级（按优先级使用）
+1. getByTestId('xxx')        - data-test / data-testid
+2. getByRole('button', ...)  - 语义化角色
+3. getByLabel('...')         - 表单 label 关联
+4. getByText('...')          - 可见文本
+5. locator('#id')            - HTML ID（最后选择）
 
-**验证命令:**
-```bash
-npm install
-npx playwright install chromium
-npx playwright test
-```
-```
+## POM 类结构（必须包含 4 类成员）
+1. Locators    - 所有选择器，声明为 readonly
+2. Navigation  - goto() 方法
+3. Actions     - 操作方法（fill/click/select 等组合）
+4. Assertions  - 断言方法（封装 expect 断言）
 
-## Tips
+## 强制规则
+- 所有选择器集中声明，禁止在 Actions/Assertions 方法中写原始选择器
+- 方法名使用动词开头的驼峰命名: login(), addToCart(), expectErrorMessage()
+- 构造函数: constructor(private page: Page) {}
 
-**Selector extraction:**
-```
-From this DOM snapshot, extract selectors for interactive elements.
-Prefer data-testid > role+name > label > text > class
-```
+---
 
-**Test naming:** `Feature_Scenario_ExpectedResult`
-```typescript
-test('Login_ValidCredentials_RedirectsToDashboard', ...)
-test('Login_EmptyPassword_ShowsError', ...)
-```
+生成完整的 TypeScript 文件，直接可用，不要注释掉任何代码。
+````
+
+---
+
+## Prompt 2：从测试用例文档生成 Playwright 测试脚本
+
+**使用时机**: Phase 3（Code），POM 类已生成后  
+**输出位置**: `tests/{feature}.spec.ts`
+
+````
+# 角色定义
+
+你是一位资深 QA 自动化测试架构师，拥有12年端到端测试设计经验，
+擅长 Playwright 测试框架的高级应用和 Page Object Model 最佳实践。
+
+---
+
+# 任务
+
+根据以下测试用例文档和 POM 类定义，生成完整的 Playwright 测试
+脚本文件（.spec.ts）。只转化标记了「可自动化」标签的测试用例。
+
+---INPUT---
+
+## 材料1：测试用例文档（可自动化部分）
+{从 docs/test-cases/{功能}-测试用例.md 中复制标记「可自动化」的用例行}
+
+## 材料2：POM 类方法定义
+{粘贴已生成的各 Page Object 类的方法签名，如：
+class LoginPage:
+  - goto()
+  - login(username: string, password: string)
+  - expectLoginError(message: string)
+
+class InventoryPage:
+  - addItemToCartByName(name: string)
+  - gotoCart()
+  - expectItemCount(n: number)}
+
+## 材料3：测试数据（可选）
+{如用户名、密码、商品名、地址信息等}
+
+---
+
+# 目标
+
+## 核心目标
+将测试用例文档中每条「可自动化」用例转化为一个独立的 test() 块，
+用例编号和概述作为测试名称，前提条件对应 beforeEach，步骤对应
+按序的方法调用，预期结果对应 expect() 断言。
+
+## 转化规则
+| 测试用例字段      | 对应代码结构            |
+|----------------|----------------------|
+| 用例编号+概述     | test('编号 概述', ...)  |
+| 功能模块（相同的） | test.describe('模块')  |
+| 前提条件         | beforeEach() 中的操作  |
+| 输入数据或操作    | 按顺序调用 POM 方法      |
+| 预期结果         | expect() 断言          |
+
+## 成功标准
+- ✅ 每条「可自动化」用例对应一个 test() 块
+- ✅ 测试名称包含用例编号，如 SWAG-LOGIN-001 标准用户正常登录
+- ✅ 只调用 POM 方法，禁止在 .spec.ts 中写原始 CSS/XPath 选择器
+- ✅ 每个关键步骤前有 console.log 输出
+- ✅ 使用 Playwright 自动等待，禁止 page.waitForTimeout() 固定等待
+
+---
+
+# 输出要求
+
+## 文件结构
+1. 导入语句（Playwright + 所有 POM 类）
+2. 测试常量（复用数据）
+3. test.describe 块（按功能模块分组）
+4. beforeEach（初始化 POM + 执行前提条件）
+5. 每条用例对应一个 test() 块
+
+## 代码规范
+- 文件: TypeScript (.spec.ts)，缩进 2 个空格
+- 禁止: page.waitForTimeout() / sleep() / hardcoded selectors
+- 推荐: expect().toHaveURL() / toContainText() / toBeVisible() / toHaveText()
+- 步骤日志: console.log('步骤N: {操作描述}') 在每个 POM 方法调用前
+
+---
+
+直接输出完整 .spec.ts 文件，不要有任何前言或解释。
+````
+
+---
+
+## Prompt 3：AUTO 模式（测试用例文档 → POM + 脚本一键生成）
+
+**使用时机**: Phase 3（Code），当测试用例文档和选择器探索均完成后，一次性生成全部代码  
+**前提**: Phase 2 已完成（各页面选择器已确认），Phase 1 已完成（测试用例文档已就绪）
+
+````
+# 任务
+
+读取以下材料，自动完成 Phase 3 全部输出：
+1. 为每个新页面生成 Page Object 类（pages/{PageName}Page.ts）
+2. 为每个功能生成测试脚本（tests/{feature}.spec.ts）
+
+---INPUT---
+
+## 测试用例文档
+{粘贴 docs/test-cases/{功能}-测试用例.md 完整内容}
+
+## 各页面选择器表
+{粘贴 Phase 2 整理的选择器表，每个页面一段}
+
+## 已有的 POM 类（已存在的不重复生成）
+{已生成的类名列表，如 LoginPage、CartPage}
+
+---
+
+# 输出顺序
+
+按以下顺序输出，每个文件用分隔符标记：
+
+=== FILE: pages/{PageName}Page.ts ===
+{TypeScript 代码}
+
+=== FILE: tests/{feature}.spec.ts ===
+{TypeScript 代码}
+
+---
+
+# 约束
+
+1. 所有选择器集中在 POM 类中，测试文件中不出现原始选择器
+2. 只转化标记「可自动化」的测试用例
+3. 测试名称格式: {用例编号} {用例概述}
+4. 每个关键步骤加 console.log 输出
+5. 禁止固定等待（waitForTimeout / sleep）
+````
+
+---
+
+## Prompt 4：故障诊断
+
+**使用时机**: Phase 5（Diagnose），测试执行失败时  
+**工具**: Chrome DevTools MCP
+
+````
+# 任务（故障诊断模式）
+
+测试用例 {用例编号} 执行失败，错误信息：
+
+{粘贴完整错误信息 / 截图描述}
+
+请按以下步骤诊断：
+
+1. 重现失败场景（MCP 打开对应 URL，执行失败前的操作步骤）
+2. 截图对比（当前状态 vs 预期状态）
+3. 控制台错误（mcp_io_github_chr_list_console_messages, types=["error"]）
+4. 网络请求（mcp_io_github_chr_list_network_requests, 查看失败的 API 调用）
+5. DOM 快照（mcp_io_github_chr_evaluate_script 读取目标元素的实际值）
+
+---
+
+诊断完成后，输出：
+1. 根因: 一句话说明失败原因
+2. 类型: 选择器变更 / 断言值错误 / 超时 / API 失败 / 环境问题
+3. 修复方案:
+   - 如需更新 POM → 提供新的 Locator 代码
+   - 如需更新脚本 → 提供修改后的 test() 代码
+   - 如需改后端 → 说明 API 问题
+4. 预防措施: 如何避免同类问题再次出现
+````
+
+---
+
+## Prompt 5：生成测试数据
+
+**使用时机**: Phase 1/3，需要准备测试数据时
+
+````
+# 任务
+
+为以下测试用例生成结构化的测试数据集：
+
+{粘贴测试用例的「前提条件」和「输入数据或操作」字段}
+
+---
+
+# 输出位置
+tests/fixtures/{feature}-test-data.ts
+
+# 数据分组要求
+1. valid       - 正常路径数据
+2. invalid     - 异常场景数据
+3. boundary    - 边界值数据
+
+# 敏感数据处理
+密码、Token 等使用环境变量:
+process.env.TEST_PASSWORD ?? 'default_test_password'
+
+---
+
+直接输出完整 TypeScript 文件。
+````
+
+---
+
+## Prompt 6：应急模式（无需求文档，从 UI 归纳测试用例）
+
+> ⚠️ **仅在无法获取需求文档或 User Story 时使用**。优先使用 Prompt 0。
+
+**使用时机**: 已完成 Phase 2 探索，但没有需求文档，需要从 UI 逆向归纳测试需求
+
+````
+# 任务（应急模式：从 UI 探索逆向生成测试用例）
+
+已完成的页面探索数据如下，请从中归纳测试场景并生成测试用例文档。
+
+---INPUT---
+
+## 探索数据
+{粘贴 Phase 2 整理的各页面选择器表、截图描述、交互验证记录}
+
+---
+
+# 要求
+
+1. 识别所有可测试的功能点（基于探索发现的 UI 元素和交互路径）
+2. 为每个功能点设计测试用例（正常/异常/边界，参照 Prompt 0 的输出规范）
+3. 在每个测试用例的「测试结果」列标注（UI归纳，需与需求确认）
+4. 添加「待确认需求清单」章节，列出无法从 UI 确认的规则（如错误
+   提示文案、会话过期时间等）
+
+---
+
+输出格式与 Prompt 0 相同，可直接保存为 docs/test-cases/{功能}-测试用例.md。
+获取需求文档后，建议用 Prompt 0 重新生成以替换本次输出。
+````
