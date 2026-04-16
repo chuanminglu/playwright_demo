@@ -12,19 +12,17 @@ export default defineConfig({
   ],
   use: {
     trace: 'on-first-retry',
-    // 设置操作延迟（毫秒），方便观察浏览器操作
-    slowMo: 500,
-    // 添加截图和视频配置
-    screenshot: 'only-on-failure',  // 失败时截图
-    video: 'retain-on-failure',     // 失败时保留视频
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    // saucedemo 使用 data-test 属性，需覆盖默认的 data-testid
+    testIdAttribute: 'data-test',
   },
   projects: [
     {
       name: 'chromium',
       use: { 
         ...devices['Desktop Chrome'],
-        // 强制使用有头模式
-        headless: false,
+        headless: true,
       },
     },
   ],
