@@ -27,13 +27,13 @@ ANALYZE → EXPLORE → CODE → EXECUTE → DIAGNOSE
     └────────── (on failure) ────────────┘
 ```
 
-| 阶段 | 驱动工具 | 输入 | 输出 |
-|------|---------|------|------|
-| **1. Analyze** | AI (Prompt 0) | User Story / 验收标准 | 测试用例文档 |
-| **2. Explore** | MCP | 测试用例（涉及哪些页面） | 各页面选择器表 |
-| **3. Code** | AI (Prompt 1 → Prompt 2) | 测试用例 + 选择器 | POM 类 + 测试脚本 |
-| **4. Execute** | Playwright / CI | 测试脚本 | 测试报告 |
-| **5. Diagnose** | MCP + AI | 失败信息 | 根因 + 修复方案 |
+| 阶段 | 驱动工具 | 输入 | 输出 | 放行条件 |
+|------|---------|------|------|--------|
+| **1. Analyze** | AI (Prompt 0) | User Story / 验收标准 | 测试用例文档 | 🛑 **Gate 1**: 人工评审通过 |
+| **2. Explore** | MCP | 测试用例（涉及哪些页面） | 各页面选择器表 | 自动流转 |
+| **3. Code** | AI (Prompt 1 → Prompt 2) | 测试用例 + 选择器 | POM 类 + 测试脚本 | 🛑 **Gate 2**: tsc 编译通过 + 人工抽查 |
+| **4. Execute** | Playwright / CI | 测试脚本 | 测试报告 | 自动流转 |
+| **5. Diagnose** | MCP + AI | 失败信息 | 根因 + 修复方案 | 自动流转 |
 
 ---
 
@@ -77,6 +77,23 @@ docs/test-cases/
 - ✅ P2 — 性能/安全（按需）
 
 See: `references/prompts.md` → Prompt 0
+
+### 🛑 Gate 1 — 测试用例人工评审（必须通过才能进入 Phase 2）
+
+在测试用例文档末尾添加以下评审记录后方可继续：
+
+```markdown
+## 评审记录
+- [ ] 所有 AC / 规则均有对应用例（覆盖矩阵无空白行）
+- [ ] P0 用例覆盖核心 Happy Path
+- [ ] P1 用例覆盖参数验证和异常场景
+- [ ] 推断用例已标注「待确认」
+- [ ] 可自动化标签标注正确
+
+**评审人**: ___  **日期**: ___  **状态**: ⬜ 待审 / ✅ 通过 / ❌ 退回
+```
+
+> ⚠️ 状态为 ✅ 通过 之前，禁止进入 Phase 2
 
 ---
 
@@ -131,6 +148,28 @@ mcp_io_github_chr_take_screenshot()
 | 3 | Label / Placeholder | ⭐⭐ |
 | 4 | 文本内容 | ⭐ |
 | 5 | CSS class | ⚠️ 避免 |
+
+### 2.4 选择器表输出格式（Phase 2 产出物）
+
+MCP `evaluate_script` 返回原始 JSON 后，整理为以下标准表格格式，
+作为 Phase 3 Prompt 1 的输入材料：
+
+```markdown
+### {页面名称} 选择器表
+URL: {页面 URL}
+属性类型: data-test   ← 记录实际属性名，供 POM 生成时选择 locator 方式
+
+| 属性值 | 标签 | type | placeholder | 用途（结合测试用例推断） |
+|--------|-----|------|-------------|------------------------|
+| login-container    | div   | —        | —        | 登录表单容器（仅布局，不需选择） |
+| username           | input | text     | Username | 用户名输入框 |
+| password           | input | password | Password | 密码输入框 |
+| login-button       | input | submit   | —        | 登录按钮 |
+| error              | h3    | —        | —        | 错误提示（失败时出现）|
+```
+
+> **注意**：原始 JSON 可能包含布局容器等不需要选择的元素，
+> 整理时只保留测试用例中实际需要交互或断言的元素。
 
 See: `references/prompts.md` → Prompt 1（生成 POM）
 
@@ -190,6 +229,27 @@ tests/
 
 See: `references/page-object-template.md` — POM 模板  
 See: `references/prompts.md` → Prompt 1, Prompt 2
+
+### 🛑 Gate 2 — POM 代码评审（必须通过才能进入 Phase 4）
+
+```bash
+# 自动检查：编译通过（0 错误）
+npx tsc --noEmit
+```
+
+人工抽查清单：
+```markdown
+- [ ] Locators 区：每个 locator 与 Phase 2 选择器表一一对应
+- [ ] locator 写法为 page.locator('[data-test="..."]')（不依赖 config）
+- [ ] Actions 区：方法名语义清晰，步骤顺序与测试用例一致
+- [ ] Assertions 区：断言覆盖测试用例中所有预期结果字段
+- [ ] spec 文件中无原始 CSS/XPath 选择器
+- [ ] npx tsc --noEmit 无报错
+
+**检查人**: ___  **日期**: ___  **状态**: ⬜ 待查 / ✅ 通过 / ❌ 需修改
+```
+
+> ⚠️ 状态为 ✅ 通过 之前，禁止执行 Phase 4
 
 ---
 
