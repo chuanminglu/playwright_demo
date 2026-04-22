@@ -120,15 +120,91 @@ mcp_io_github_chr_take_screenshot({ fullPage: true })
 // Step 2: 获取 DOM 快照（含 UID）
 mcp_io_github_chr_take_snapshot({ verbose: true })
 
-// Step 3: 提取 data-test / data-testid 选择器
+// Step 3: 提取所有优先级选择器
 mcp_io_github_chr_evaluate_script({
   function: `() => {
-    const result = {};
-    document.querySelectorAll('[data-test], [data-testid], input, button, a').forEach(el => {
-      const key = el.dataset?.test || el.dataset?.testid || el.id;
-      if (key) result[key] = { tag: el.tagName, type: el.type, text: el.innerText?.slice(0,30) };
+    const elements = [];
+    // 查询所有可交互元素和带测试属性的元素
+    document.querySelectorAll(`
+      [data-test], [data-testid], [data-cy], [data-e2e],
+      [aria-label], [role],
+      [id], [name],
+      input, button, a, select, textarea, [type="submit"]
+    `).forEach(el => {
+      // 按优先级识别选择器类型
+      let selectorType = 'css';
+      let selectorValue = '';
+      let priority = 7;
+      
+      // P1: 测试专用属性
+      if (el.dataset.test) {
+        selectorType = 'data-test';
+        selectorValue = el.dataset.test;
+        priority = 1;
+      } else if (el.dataset.testid) {
+        selectorType = 'data-testid';
+        selectorValue = el.dataset.testid;
+        priority = 1;
+      } else if (el.dataset.cy) {
+        selectorType = 'data-cy';
+        selectorValue = el.dataset.cy;
+        priority = 1;
+      } else if (el.dataset.e2e) {
+        selectorType = 'data-e2e';
+        selectorValue = el.dataset.e2e;
+        priority = 1;
+      }
+      // P2: ARIA 属性
+      else if (el.ariaLabel) {
+        selectorType = 'aria-label';
+        selectorValue = el.ariaLabel;
+        priority = 2;
+      } else if (el.role && el.innerText) {
+        selectorType = 'role+name';
+        selectorValue = el.role + ' "' + el.innerText.slice(0, 20) + '"';
+        priority = 2;
+      }
+      // P3: 语义化属性
+      else if (el.id && !el.id.match(/^[a-f0-9-]{20,}$/)) {  // 排除自动生成的长ID
+        selectorType = 'id';
+        selectorValue = el.id;
+        priority = 3;
+      } else if (el.name) {
+        selectorType = 'name';
+        selectorValue = el.name;
+        priority = 3;
+      }
+      // P5: Placeholder
+      else if (el.placeholder) {
+        selectorType = 'placeholder';
+        selectorValue = el.placeholder;
+        priority = 5;
+      }
+      // P6: 文本内容
+      else if (el.innerText && el.innerText.trim()) {
+        selectorType = 'text';
+        selectorValue = el.innerText.slice(0, 30);
+        priority = 6;
+      }
+      
+      if (selectorValue) {
+        elements.push({
+          priority,
+          selectorType,
+          selectorValue,
+          tag: el.tagName.toLowerCase(),
+          type: el.type || '',
+          ariaLabel: el.ariaLabel || '',
+          role: el.role || '',
+          id: el.id || '',
+          name: el.name || '',
+          placeholder: el.placeholder || '',
+          text: el.innerText?.slice(0, 30) || ''
+        });
+      }
     });
-    return result;
+    // 按优先级排序
+    return elements.sort((a, b) => a.priority - b.priority);
   }`
 })
 
@@ -139,15 +215,27 @@ mcp_io_github_chr_wait_for({ text: "EXPECTED_RESULT_TEXT", timeout: 3000 })
 mcp_io_github_chr_take_screenshot()
 ```
 
-### 2.3 选择器优先级
+### 2.3 选择器优先级（增强版）
 
-| 优先级 | 方法 | 稳定性 |
-|--------|------|--------|
-| 1 | `data-test` / `data-testid` | ⭐⭐⭐ 最稳定 |
-| 2 | Role + Name | ⭐⭐⭐ |
-| 3 | Label / Placeholder | ⭐⭐ |
-| 4 | 文本内容 | ⭐ |
-| 5 | CSS class | ⚠️ 避免 |
+| 优先级 | 方法 | 稳定性 | 适用场景 |
+|--------|------|--------|----------|
+| 1 | `data-test` / `data-testid` / `data-cy` / `data-e2e` | ⭐⭐⭐⭐⭐ | 测试专用属性，最稳定 |
+| 2 | ARIA属性 (`aria-label`, `role`) | ⭐⭐⭐⭐ | 无障碍访问兼容 |
+| 3 | 语义化ID/Name (`id`, `name`) | ⭐⭐⭐ | 表单和导航元素 |
+| 4 | Role + Name | ⭐⭐⭐ | Playwright推荐方法 |
+| 5 | Label / Placeholder | ⭐⭐ | 用户界面文本 |
+| 6 | 文本内容 | ⭐ | 按钮和链接文本 |
+| 7 | CSS class | ⚠️ | 仅在其他方法无效时使用 |
+
+### 2.3.1 选择器决策流程
+
+同一个元素可能有多个选择器，按以下顺序选择：
+
+1. ✅ **有 `data-testid` 等测试属性？** → 优先使用 `page.getByTestId()`
+2. ✅ **有语义化 `role` + 明确文本？** → 使用 `page.getByRole()`
+3. ✅ **有 `aria-label`？** → 使用 `page.getByLabel()`
+4. ✅ **有稳定的 `id` 且不是自动生成？** → 使用 `page.locator('#id')`
+5. ⚠️ **只有 `class` 或自动生成的 ID？** → 建议开发团队添加测试属性
 
 ### 2.4 选择器表输出格式（Phase 2 产出物）
 
@@ -156,20 +244,30 @@ MCP `evaluate_script` 返回原始 JSON 后，整理为以下标准表格格式�
 
 ```markdown
 ### {页面名称} 选择器表
-URL: {页面 URL}
-属性类型: data-test   ← 记录实际属性名，供 POM 生成时选择 locator 方式
+**URL**: {页面 URL}  
+**探测到的选择器统计**：data-testid (8个) | aria-label (3个) | id (5个) | role (7个)
 
-| 属性值 | 标签 | type | placeholder | 用途（结合测试用例推断） |
-|--------|-----|------|-------------|------------------------|
-| login-container    | div   | —        | —        | 登录表单容器（仅布局，不需选择） |
-| username           | input | text     | Username | 用户名输入框 |
-| password           | input | password | Password | 密码输入框 |
-| login-button       | input | submit   | —        | 登录按钮 |
-| error              | h3    | —        | —        | 错误提示（失败时出现）|
+| 优先级 | 选择器类型 | 选择器值 | 元素标签 | Playwright Locator | 用途说明 |
+|--------|-----------|---------|---------|-------------------|----------|
+| ⭐⭐⭐⭐⭐ | data-testid | username | input | `page.getByTestId('username')` | 用户名输入框 |
+| ⭐⭐⭐⭐⭐ | data-test | password | input | `page.locator('[data-test="password"]')` | 密码输入框 |
+| ⭐⭐⭐⭐⭐ | data-testid | login-button | button | `page.getByTestId('login-button')` | 登录按钮 |
+| ⭐⭐⭐⭐ | role+name | button "Login" | button | `page.getByRole('button', { name: 'Login' })` | 登录按钮（备用） |
+| ⭐⭐⭐⭐ | aria-label | Close modal | button | `page.getByLabel('Close modal')` | 关闭按钮 |
+| ⭐⭐⭐ | id | email-input | input | `page.locator('#email-input')` | 邮箱输入框 |
+| ⭐⭐ | placeholder | Search... | input | `page.getByPlaceholder('Search...')` | 搜索框 |
+| ⭐ | text | Remember me | label | `page.getByText('Remember me')` | 记住登录复选框标签 |
 ```
 
-> **注意**：原始 JSON 可能包含布局容器等不需要选择的元素，
-> 整理时只保留测试用例中实际需要交互或断言的元素。
+**输出格式说明**：
+- **优先级列**：使用星级直观展示选择器稳定性（5星最稳定）
+- **Playwright Locator 列**：直接提供推荐的代码写法，方便 Phase 3 生成 POM 时复制
+- **用途说明列**：结合测试用例推断元素用途，避免选择布局容器等非交互元素
+
+> **注意**：
+> 1. 原始 JSON 可能包含布局容器等不需要选择的元素，整理时只保留测试用例中实际需要交互或断言的元素
+> 2. 同一元素如果有多个选择器（如既有 data-testid 又有 role），优先记录高优先级的，备用方案可在用途说明中标注
+> 3. 自动生成的 ID（如 UUID 格式）应标注为低优先级或排除
 
 See: `references/prompts.md` → Prompt 1（生成 POM）
 
