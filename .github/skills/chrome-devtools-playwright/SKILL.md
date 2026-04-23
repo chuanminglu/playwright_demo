@@ -2,14 +2,13 @@
 name: chrome-devtools-playwright
 description: AI辅助E2E测试工作流，遵循需求驱动的专业测试流程：从User Story生成测试用例 → MCP定向探索页面提取选择器 → 生成POM和测试脚本 → CI执行 → MCP诊断失败。用于从需求出发建立完整E2E测试套件。
 ---
-
 # Chrome DevTools + Playwright 测试技能
 
 **需求驱动工作流**: 先从业务需求生成测试用例，再用 MCP 探索页面找选择器，最后生成代码执行
 
 ## 核心原则
 
-> **测试用例来源于需求，不来源于 UI 探索**  
+> **测试用例来源于需求，不来源于 UI 探索**
 > MCP 探索的目的是「找到如何实现测试」，而不是「发现要测什么」
 
 ## 适用场景
@@ -27,13 +26,13 @@ ANALYZE → EXPLORE → CODE → EXECUTE → DIAGNOSE
     └────────── (on failure) ────────────┘
 ```
 
-| 阶段 | 驱动工具 | 输入 | 输出 | 放行条件 |
-|------|---------|------|------|--------|
-| **1. Analyze** | AI (Prompt 0) | User Story / 验收标准 | 测试用例文档 | 🛑 **Gate 1**: 人工评审通过 |
-| **2. Explore** | MCP | 测试用例（涉及哪些页面） | 各页面选择器表 | 自动流转 |
-| **3. Code** | AI (Prompt 1 → Prompt 2) | 测试用例 + 选择器 | POM 类 + 测试脚本 | 🛑 **Gate 2**: tsc 编译通过 + 人工抽查 |
-| **4. Execute** | Playwright / CI | 测试脚本 | 测试报告 | 自动流转 |
-| **5. Diagnose** | MCP + AI | 失败信息 | 根因 + 修复方案 | 自动流转 |
+| 阶段                  | 驱动工具                  | 输入                     | 输出              | 放行条件                                    |
+| --------------------- | ------------------------- | ------------------------ | ----------------- | ------------------------------------------- |
+| **1. Analyze**  | AI (Prompt 0)             | User Story / 验收标准    | 测试用例文档      | 🛑**Gate 1**: 人工评审通过            |
+| **2. Explore**  | MCP                       | 测试用例（涉及哪些页面） | 各页面选择器表    | 自动流转                                    |
+| **3. Code**     | AI (Prompt 1 → Prompt 2) | 测试用例 + 选择器        | POM 类 + 测试脚本 | 🛑**Gate 2**: tsc 编译通过 + 人工抽查 |
+| **4. Execute**  | Playwright / CI           | 测试脚本                 | 测试报告          | 自动流转                                    |
+| **5. Diagnose** | MCP + AI                  | 失败信息                 | 根因 + 修复方案   | 自动流转                                    |
 
 ---
 
@@ -42,20 +41,24 @@ ANALYZE → EXPLORE → CODE → EXECUTE → DIAGNOSE
 **这是整个流程的起点，测试用例必须从需求中推导，而不是从 UI 归纳。**
 
 ### 输入
+
 - User Story（用户故事）
 - 验收标准（AC）
 - 业务规则、约束条件
 
 ### 执行
+
 使用 `references/prompts.md` → **Prompt 0**，输入需求材料，让 AI 生成测试用例文档。
 
 ### 输出位置
+
 ```
 docs/test-cases/
 └── {功能名称}-测试用例.md
 ```
 
 ### 测试用例文档结构
+
 ```markdown
 # {功能名称}功能测试用例清单
 
@@ -71,6 +74,7 @@ docs/test-cases/
 ```
 
 ### 覆盖场景（必须包含）
+
 - ✅ P0 — 正常路径（Happy Path）：核心业务流程端到端
 - ✅ P1 — 参数验证：格式、长度、类型约束
 - ✅ P1 — 异常场景：错误提示、边界值
@@ -104,6 +108,7 @@ See: `references/prompts.md` → Prompt 0
 ### 2.1 只探索用例涉及的页面
 
 先阅读测试用例文档，识别需要哪些页面：
+
 ```
 // 例：登录测试用例涉及的页面
 - /login（登录页）
@@ -113,7 +118,7 @@ See: `references/prompts.md` → Prompt 0
 ### 2.2 定向探索每个页面
 
 ```javascript
-// Step 1: 打开页面截图
+0// Step 1: 打开页面截图
 mcp_io_github_chr_new_page({ url: "TARGET_PAGE_URL" })
 mcp_io_github_chr_take_screenshot({ fullPage: true })
 
@@ -135,7 +140,7 @@ mcp_io_github_chr_evaluate_script({
       let selectorType = 'css';
       let selectorValue = '';
       let priority = 7;
-      
+  
       // P1: 测试专用属性
       if (el.dataset.test) {
         selectorType = 'data-test';
@@ -186,7 +191,7 @@ mcp_io_github_chr_evaluate_script({
         selectorValue = el.innerText.slice(0, 30);
         priority = 6;
       }
-      
+  
       if (selectorValue) {
         elements.push({
           priority,
@@ -211,21 +216,21 @@ mcp_io_github_chr_evaluate_script({
 // Step 4: 验证关键交互（按测试用例步骤验证可行性）
 mcp_io_github_chr_fill({ uid: "USERNAME_UID", value: "test_user" })
 mcp_io_github_chr_click({ uid: "SUBMIT_UID" })
-mcp_io_github_chr_wait_for({ text: "EXPECTED_RESULT_TEXT", timeout: 3000 })
+mcp_io_github_chr_wait_for({ text: "EXPECTED_RESULT_TEXT", timeout: 30000 })
 mcp_io_github_chr_take_screenshot()
 ```
 
 ### 2.3 选择器优先级（增强版）
 
-| 优先级 | 方法 | 稳定性 | 适用场景 |
-|--------|------|--------|----------|
-| 1 | `data-test` / `data-testid` / `data-cy` / `data-e2e` | ⭐⭐⭐⭐⭐ | 测试专用属性，最稳定 |
-| 2 | ARIA属性 (`aria-label`, `role`) | ⭐⭐⭐⭐ | 无障碍访问兼容 |
-| 3 | 语义化ID/Name (`id`, `name`) | ⭐⭐⭐ | 表单和导航元素 |
-| 4 | Role + Name | ⭐⭐⭐ | Playwright推荐方法 |
-| 5 | Label / Placeholder | ⭐⭐ | 用户界面文本 |
-| 6 | 文本内容 | ⭐ | 按钮和链接文本 |
-| 7 | CSS class | ⚠️ | 仅在其他方法无效时使用 |
+| 优先级 | 方法                                                         | 稳定性     | 适用场景               |
+| ------ | ------------------------------------------------------------ | ---------- | ---------------------- |
+| 1      | `data-test` / `data-testid` / `data-cy` / `data-e2e` | ⭐⭐⭐⭐⭐ | 测试专用属性，最稳定   |
+| 2      | ARIA属性 (`aria-label`, `role`)                          | ⭐⭐⭐⭐   | 无障碍访问兼容         |
+| 3      | 语义化ID/Name (`id`, `name`)                             | ⭐⭐⭐     | 表单和导航元素         |
+| 4      | Role + Name                                                  | ⭐⭐⭐     | Playwright推荐方法     |
+| 5      | Label / Placeholder                                          | ⭐⭐       | 用户界面文本           |
+| 6      | 文本内容                                                     | ⭐         | 按钮和链接文本         |
+| 7      | CSS class                                                    | ⚠️       | 仅在其他方法无效时使用 |
 
 ### 2.3.1 选择器决策流程
 
@@ -260,11 +265,13 @@ MCP `evaluate_script` 返回原始 JSON 后，整理为以下标准表格格式�
 ```
 
 **输出格式说明**：
+
 - **优先级列**：使用星级直观展示选择器稳定性（5星最稳定）
 - **Playwright Locator 列**：直接提供推荐的代码写法，方便 Phase 3 生成 POM 时复制
 - **用途说明列**：结合测试用例推断元素用途，避免选择布局容器等非交互元素
 
 > **注意**：
+>
 > 1. 原始 JSON 可能包含布局容器等不需要选择的元素，整理时只保留测试用例中实际需要交互或断言的元素
 > 2. 同一元素如果有多个选择器（如既有 data-testid 又有 role），优先记录高优先级的，备用方案可在用途说明中标注
 > 3. 自动生成的 ID（如 UUID 格式）应标注为低优先级或排除
@@ -279,8 +286,8 @@ See: `references/prompts.md` → Prompt 1（生成 POM）
 
 ### 3.1 生成 Page Objects
 
-**输入**: Explore 阶段的选择器 + 截图  
-**使用**: `references/prompts.md` → Prompt 1  
+**输入**: Explore 阶段的选择器 + 截图
+**使用**: `references/prompts.md` → Prompt 1
 **输出位置**: `pages/{PageName}Page.ts`
 
 ```typescript
@@ -300,17 +307,18 @@ await loginPage.login('standard_user', 'secret_sauce');  // 正确
 
 ### 3.2 生成测试脚本
 
-**输入**: 测试用例文档（标记「可自动化」的条目）+ POM 类  
-**使用**: `references/prompts.md` → Prompt 2  
+**输入**: 测试用例文档（标记「可自动化」的条目）+ POM 类
+**使用**: `references/prompts.md` → Prompt 2
 **输出位置**: `tests/{feature}.spec.ts`
 
 **映射规则**:
-| 测试用例字段 | 代码元素 |
-|-------------|---------|
-| 前提条件 | `test.beforeEach()` 或 `test.step()` |
-| 输入数据或操作 | POM 方法调用（`await` 语句） |
-| 预期结果 | `expect()` 断言 |
-| 用例概述 | `test('用例概述', ...)` 名称 |
+
+| 测试用例字段   | 代码元素                                 |
+| -------------- | ---------------------------------------- |
+| 前提条件       | `test.beforeEach()` 或 `test.step()` |
+| 输入数据或操作 | POM 方法调用（`await` 语句）           |
+| 预期结果       | `expect()` 断言                        |
+| 用例概述       | `test('用例概述', ...)` 名称           |
 
 ### 输出文件结构
 
@@ -325,7 +333,7 @@ tests/
 └── {feature}.spec.ts           # 测试脚本（无原始选择器）
 ```
 
-See: `references/page-object-template.md` — POM 模板  
+See: `references/page-object-template.md` — POM 模板
 See: `references/prompts.md` → Prompt 1, Prompt 2
 
 ### 🛑 Gate 2 — POM 代码评审（必须通过才能进入 Phase 4）
@@ -336,6 +344,7 @@ npx tsc --noEmit
 ```
 
 人工抽查清单：
+
 ```markdown
 - [ ] Locators 区：每个 locator 与 Phase 2 选择器表一一对应
 - [ ] locator 写法为 page.locator('[data-test="..."]')（不依赖 config）
@@ -397,12 +406,12 @@ mcp_io_github_chr_list_network_requests({ resourceTypes: ["xhr", "fetch"] })
 mcp_io_github_chr_take_screenshot()
 ```
 
-| 症状 | MCP 命令 | 检查项 |
-|------|---------|--------|
-| 元素未找到 | `take_snapshot` | 选择器是否变更 |
-| 等待超时 | `list_network_requests` | API 是否慢/失败 |
-| 值断言失败 | `list_console_messages` + `evaluate_script` | 实际值是什么 |
-| 视觉异常 | `take_screenshot` | 页面状态对比 |
+| 症状       | MCP 命令                                        | 检查项          |
+| ---------- | ----------------------------------------------- | --------------- |
+| 元素未找到 | `take_snapshot`                               | 选择器是否变更  |
+| 等待超时   | `list_network_requests`                       | API 是否慢/失败 |
+| 值断言失败 | `list_console_messages` + `evaluate_script` | 实际值是什么    |
+| 视觉异常   | `take_screenshot`                             | 页面状态对比    |
 
 See: `references/diagnosis.md` — 故障诊断详细模式
 
@@ -438,6 +447,7 @@ project/
 ```
 
 **触发方式**:
+
 ```
 请根据测试用例文档，自动生成所有测试代码
 
